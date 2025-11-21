@@ -164,35 +164,6 @@ function App() {
       )}
 
       <div className="layout">
-    <div
-      style={{
-        minHeight: '100vh',
-        padding: '1.5rem',
-        background: '#050914',
-        color: '#f9fafb',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-        AniList Helper v0
-      </h1>
-      {!storageHealthy && (
-        <p style={{ marginBottom: '0.75rem', color: '#fbbf24' }}>
-          Storage is disabled in this browser, so your list won&apos;t be saved across refreshes.
-        </p>
-      )}
-      <p style={{ marginBottom: '1rem', opacity: 0.8 }}>
-        Paste anime names (one per line). I&apos;ll try to match them and auto-add confident ones.
-      </p>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
-          gap: '1.25rem',
-          alignItems: 'flex-start',
-        }}
-      >
         {/* Left: input */}
         <div className="card input-card">
           <div className="section-title">Paste anime names</div>
