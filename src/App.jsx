@@ -4,9 +4,24 @@ import { matchAnime } from './anilist'
 const STORAGE_KEY = 'animeList_v0'
 const QUEUE_KEY = 'animeQueue_v0'
 
-function loadFromStorage(key, fallback) {
+function getLocalStorage() {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return null
+  }
+
   try {
-    const raw = localStorage.getItem(key)
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function loadFromStorage(key, fallback) {
+  const storage = getLocalStorage()
+  if (!storage) return fallback
+
+  try {
+    const raw = storage.getItem(key)
     if (!raw) return fallback
     return JSON.parse(raw)
   } catch {
@@ -15,7 +30,14 @@ function loadFromStorage(key, fallback) {
 }
 
 function saveToStorage(key, value) {
-  localStorage.setItem(key, JSON.stringify(value))
+  const storage = getLocalStorage()
+  if (!storage) return
+
+  try {
+    storage.setItem(key, JSON.stringify(value))
+  } catch (e) {
+    console.warn('Unable to persist data to localStorage', e)
+  }
 }
 
 function App() {
@@ -23,8 +45,16 @@ function App() {
   const [animeList, setAnimeList] = useState([])
   const [queue, setQueue] = useState([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [storageHealthy, setStorageHealthy] = useState(true)
 
   useEffect(() => {
+    const storage = getLocalStorage()
+
+    if (!storage) {
+      setStorageHealthy(false)
+      return
+    }
+
     setAnimeList(loadFromStorage(STORAGE_KEY, []))
     setQueue(loadFromStorage(QUEUE_KEY, []))
   }, [])
@@ -127,6 +157,11 @@ function App() {
       <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
         AniList Helper v0
       </h1>
+      {!storageHealthy && (
+        <p style={{ marginBottom: '0.75rem', color: '#fbbf24' }}>
+          Storage is disabled in this browser, so your list won&apos;t be saved across refreshes.
+        </p>
+      )}
       <p style={{ marginBottom: '1rem', opacity: 0.8 }}>
         Paste anime names (one per line). I&apos;ll try to match them and auto-add confident ones.
       </p>
