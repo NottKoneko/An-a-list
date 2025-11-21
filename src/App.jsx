@@ -4,9 +4,24 @@ import { matchAnime } from './anilist'
 const STORAGE_KEY = 'animeList_v0'
 const QUEUE_KEY = 'animeQueue_v0'
 
-function loadFromStorage(key, fallback) {
+function getLocalStorage() {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return null
+  }
+
   try {
-    const raw = localStorage.getItem(key)
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function loadFromStorage(key, fallback) {
+  const storage = getLocalStorage()
+  if (!storage) return fallback
+
+  try {
+    const raw = storage.getItem(key)
     if (!raw) return fallback
     return JSON.parse(raw)
   } catch {
@@ -15,7 +30,14 @@ function loadFromStorage(key, fallback) {
 }
 
 function saveToStorage(key, value) {
-  localStorage.setItem(key, JSON.stringify(value))
+  const storage = getLocalStorage()
+  if (!storage) return
+
+  try {
+    storage.setItem(key, JSON.stringify(value))
+  } catch (e) {
+    console.warn('Unable to persist data to localStorage', e)
+  }
 }
 
 function App() {
@@ -23,8 +45,16 @@ function App() {
   const [animeList, setAnimeList] = useState([])
   const [queue, setQueue] = useState([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [storageHealthy, setStorageHealthy] = useState(true)
 
   useEffect(() => {
+    const storage = getLocalStorage()
+
+    if (!storage) {
+      setStorageHealthy(false)
+      return
+    }
+
     setAnimeList(loadFromStorage(STORAGE_KEY, []))
     setQueue(loadFromStorage(QUEUE_KEY, []))
   }, [])
@@ -115,69 +145,36 @@ function App() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        padding: '1.5rem',
-        background: '#050914',
-        color: '#f9fafb',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-        AniList Helper v0
-      </h1>
-      <p style={{ marginBottom: '1rem', opacity: 0.8 }}>
-        Paste anime names (one per line). I&apos;ll try to match them and auto-add confident ones.
-      </p>
+    <div className="page">
+      <header className="header">
+        <div className="title-group">
+          <span className="pill">AniList Helper</span>
+          <h1 className="app-title">Build your anime queue effortlessly</h1>
+          <p className="app-subtitle">
+            Paste titles, let the matcher auto-approve confident finds, and quickly resolve any
+            ambiguous results.
+          </p>
+        </div>
+      </header>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
-          gap: '1.25rem',
-          alignItems: 'flex-start',
-        }}
-      >
+      {!storageHealthy && (
+        <div className="warning">
+          Storage is disabled in this browser, so your list won&apos;t be saved across refreshes.
+        </div>
+      )}
+
+      <div className="layout">
         {/* Left: input */}
-        <div
-          style={{
-            background: '#0f172a',
-            padding: '1rem',
-            borderRadius: '0.75rem',
-            boxShadow: '0 10px 30px rgba(15,23,42,0.8)',
-          }}
-        >
+        <div className="card input-card">
+          <div className="section-title">Paste anime names</div>
+          <p className="input-label">One title per line. We&apos;ll match and add them for you.</p>
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder={'one punch man\njjk\nattack on titian\nre zero season 2'}
-            style={{
-              width: '100%',
-              minHeight: '180px',
-              background: '#020617',
-              color: '#e5e7eb',
-              borderRadius: '0.5rem',
-              border: '1px solid #1f2937',
-              padding: '0.75rem',
-              resize: 'vertical',
-            }}
+            placeholder={'one punch man\njjk\nattack on titan\nre zero season 2'}
+            className="textarea"
           />
-          <button
-            onClick={handleProcess}
-            disabled={isProcessing}
-            style={{
-              marginTop: '0.75rem',
-              padding: '0.5rem 1rem',
-              borderRadius: '999px',
-              border: 'none',
-              background: 'linear-gradient(135deg, #6366f1, #ec4899, #fbbf24)',
-              color: '#0f172a',
-              fontWeight: 600,
-              cursor: isProcessing ? 'default' : 'pointer',
-              opacity: isProcessing ? 0.6 : 1,
-            }}
-          >
+          <button className="button" onClick={handleProcess} disabled={isProcessing}>
             {isProcessing ? 'Processing...' : 'Process input'}
           </button>
         </div>
@@ -185,147 +182,51 @@ function App() {
         {/* Right: lists */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {/* My List */}
-          <section
-            style={{
-              background: '#020617',
-              padding: '1rem',
-              borderRadius: '0.75rem',
-              border: '1px solid #111827',
-            }}
-          >
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
-              ✅ My Anime List ({animeList.length})
-            </h2>
-            {animeList.length === 0 && <p style={{ opacity: 0.7 }}>Nothing yet. Add some anime!</p>}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-                gap: '0.75rem',
-              }}
-            >
+          <section className="card">
+            <h2 className="section-title">✅ My Anime List ({animeList.length})</h2>
+            {animeList.length === 0 && <p className="empty-state">Nothing yet. Add some anime!</p>}
+            <div className="list-grid">
               {animeList.map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    background: '#020617',
-                    borderRadius: '0.75rem',
-                    border: '1px solid #111827',
-                    padding: '0.5rem',
-                  }}
-                >
-                  {a.cover && (
-                    <img
-                      src={a.cover}
-                      alt={a.title}
-                      style={{
-                        width: '100%',
-                        borderRadius: '0.5rem',
-                        marginBottom: '0.4rem',
-                      }}
-                    />
-                  )}
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{a.title}</div>
-                  <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{a.seasonYear || '—'}</div>
-                  <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>from: {a.rawInput}</div>
+                <div key={a.id} className="anime-card">
+                  {a.cover && <img src={a.cover} alt={a.title} className="anime-cover" />}
+                  <div className="anime-title">{a.title}</div>
+                  <div className="anime-meta">{a.seasonYear || '—'}</div>
+                  <div className="anime-meta">From: {a.rawInput}</div>
                 </div>
               ))}
             </div>
           </section>
 
           {/* Queue */}
-          <section
-            style={{
-              background: '#020617',
-              padding: '1rem',
-              borderRadius: '0.75rem',
-              border: '1px solid #111827',
-            }}
-          >
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>
-              ❓ Needs Review ({queue.length})
-            </h2>
-            {queue.length === 0 && <p style={{ opacity: 0.7 }}>No ambiguous results right now.</p>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <section className="card">
+            <h2 className="section-title">❓ Needs Review ({queue.length})</h2>
+            {queue.length === 0 && <p className="empty-state">No ambiguous results right now.</p>}
+            <div className="queue-list">
               {queue.map((item, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    borderRadius: '0.75rem',
-                    border: '1px solid #111827',
-                    padding: '0.75rem',
-                    background: '#020617',
-                  }}
-                >
-                  <div style={{ fontSize: '0.85rem', marginBottom: '0.35rem' }}>
-                    <span style={{ opacity: 0.7 }}>Input:</span> <code style={{ fontSize: '0.8rem' }}>{item.raw}</code>
+                <div key={idx} className="queue-card">
+                  <div style={{ fontSize: '0.9rem', marginBottom: '0.4rem' }}>
+                    <span className="input-label">Input:</span> <code>{item.raw}</code>
                   </div>
                   {item.candidates.length === 0 ? (
-                    <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>No candidates found.</div>
+                    <div className="empty-state">No candidates found.</div>
                   ) : (
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '0.5rem',
-                      }}
-                    >
+                    <div className="candidates">
                       {item.candidates.slice(0, 3).map((c, cIdx) => {
                         const anime = c.anime
                         const title = anime.title.english || anime.title.romaji || anime.title.native
                         return (
-                          <div
-                            key={cIdx}
-                            style={{
-                              borderRadius: '0.75rem',
-                              border: '1px solid #1f2937',
-                              padding: '0.5rem',
-                              maxWidth: '200px',
-                            }}
-                          >
+                          <div key={cIdx} className="candidate-card">
                             {anime.coverImage?.medium && (
                               <img
                                 src={anime.coverImage.medium}
                                 alt={title}
-                                style={{
-                                  width: '100%',
-                                  borderRadius: '0.5rem',
-                                  marginBottom: '0.35rem',
-                                }}
+                                className="anime-cover"
+                                style={{ marginBottom: '0.35rem' }}
                               />
                             )}
-                            <div
-                              style={{
-                                fontSize: '0.85rem',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {title}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: '0.7rem',
-                                opacity: 0.7,
-                                marginBottom: '0.25rem',
-                              }}
-                            >
-                              Score: {c.score.toFixed(2)}
-                            </div>
-                            <button
-                              onClick={() => handleApprove(idx, cIdx)}
-                              style={{
-                                marginTop: '0.15rem',
-                                width: '100%',
-                                borderRadius: '999px',
-                                border: 'none',
-                                padding: '0.25rem 0.5rem',
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                                background: 'linear-gradient(135deg,#22c55e,#a3e635)',
-                                color: '#022c22',
-                                fontWeight: 600,
-                              }}
-                            >
+                            <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>{title}</div>
+                            <div className="anime-meta">Score: {c.score.toFixed(2)}</div>
+                            <button className="confirm" onClick={() => handleApprove(idx, cIdx)}>
                               Confirm
                             </button>
                           </div>
@@ -334,19 +235,7 @@ function App() {
                     </div>
                   )}
 
-                  <button
-                    onClick={() => handleDiscard(idx)}
-                    style={{
-                      marginTop: '0.5rem',
-                      borderRadius: '999px',
-                      border: 'none',
-                      padding: '0.25rem 0.75rem',
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      background: '#111827',
-                      color: '#f9fafb',
-                    }}
-                  >
+                  <button className="discard" onClick={() => handleDiscard(idx)}>
                     Discard
                   </button>
                 </div>
