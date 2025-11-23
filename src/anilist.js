@@ -63,6 +63,9 @@ function similarity(a, b) {
   return 1 - distance / maxLen
 }
 
+const GOOGLE_CSE_API_KEY = import.meta.env.VITE_GOOGLE_CSE_API_KEY
+const GOOGLE_CSE_CX = import.meta.env.VITE_GOOGLE_CSE_CX
+
 // Call AniList search API
 export async function searchAnimeOnAniList(search) {
   const query = `
@@ -102,52 +105,154 @@ export async function searchAnimeOnAniList(search) {
   return json.data?.Page?.media ?? []
 }
 
-// High-level: given a raw line of text, return match info
-export async function matchAnime(rawInput) {
-  const trimmed = rawInput.trim()
-  if (!trimmed) return null
+function pickBestTitle(title = '') {
+  if (!title) return ''
 
-  const aliasedInput = applyAlias(trimmed)
+  return title
+    .replace(/\s*[\-|]\s*AniList.*$/i, '')
+    .replace(/\s*[\-|]\s*MyAnimeList.*$/i, '')
+    .replace(/\s*\|\s*Official Site.*$/i, '')
+    .replace(/\s*\(Anime\).*$/i, '')
+    .replace(/\s*\(TV\).*$/i, '')
+    .trim()
+}
 
-  const candidates = await searchAnimeOnAniList(aliasedInput)
+// Use Google CSE to refine messy descriptions into a likely anime title
+export async function searchGoogleForAnimePhrase(phrase) {
+  if (!GOOGLE_CSE_API_KEY || !GOOGLE_CSE_CX) {
+    console.warn('Google CSE env vars missing; skipping refinement')
+    return null
+  }
+
+  const params = new URLSearchParams({
+    key: GOOGLE_CSE_API_KEY,
+    cx: GOOGLE_CSE_CX,
+    q: `${phrase} anime`,
+  })
+
+  try {
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`)
+
+    if (!res.ok) {
+      console.warn('Google CSE error', await res.text())
+      return null
+    }
+
+    const data = await res.json()
+    const items = data.items ?? []
+
+    if (!items.length) return null
+
+    const sorted = items
+      .map((item) => ({
+        ...item,
+        priority: item.link?.includes('anilist.co')
+          ? 3
+          : item.link?.includes('myanimelist.net')
+            ? 2
+            : 1,
+      }))
+      .sort((a, b) => b.priority - a.priority)
+
+    for (const item of sorted) {
+      const title = pickBestTitle(item.title)
+      if (title) return title
+    }
+  } catch (e) {
+    console.warn('Google CSE request failed', e)
+  }
+
+  return null
+}
+
+function scoreCandidates(searchTerm, candidates) {
   if (!candidates.length) {
     return {
-      raw: trimmed,
-      type: 'no-match',
-      candidates: [],
+      scores: [],
+      best: null,
+      second: null,
+      margin: 0,
     }
   }
 
-  // score candidates
   const scores = candidates.map((c) => {
     const titles = [c.title.english, c.title.romaji, c.title.native].filter(Boolean)
-    const bestScore = Math.max(...titles.map((t) => similarity(aliasedInput, t)))
+    const bestScore = Math.max(...titles.map((t) => similarity(searchTerm, t)))
     return { anime: c, score: bestScore }
   })
 
   scores.sort((a, b) => b.score - a.score)
 
   const best = scores[0]
-  const second = scores[1]
+  const second = scores[1] ?? null
+  const margin = second ? best.score - second.score : 1
+
+  return { scores, best, second, margin }
+}
+
+function formatMatch(raw, scored) {
+  if (!scored.scores.length) {
+    return {
+      raw,
+      type: 'no-match',
+      candidates: [],
+    }
+  }
 
   const AUTO_THRESHOLD = 0.7
   const MARGIN_MIN = 0.2
 
-  const margin = second ? best.score - second.score : 1
-
-  if (best.score >= AUTO_THRESHOLD && margin >= MARGIN_MIN) {
+  if (scored.best.score >= AUTO_THRESHOLD && scored.margin >= MARGIN_MIN) {
     return {
-      raw: trimmed,
+      raw,
       type: 'auto',
-      best,
-      candidates: scores,
+      best: scored.best,
+      candidates: scored.scores,
     }
   }
 
   return {
-    raw: trimmed,
+    raw,
     type: 'review',
-    best,
-    candidates: scores,
+    best: scored.best,
+    candidates: scored.scores,
   }
+}
+
+async function performAniListMatch(raw, searchTerm) {
+  const candidates = await searchAnimeOnAniList(searchTerm)
+  const scored = scoreCandidates(searchTerm, candidates)
+  const result = formatMatch(raw, scored)
+
+  return { result, scored }
+}
+
+// High-level: given a raw line of text, return match info
+export async function matchAnime(rawInput) {
+  const trimmed = rawInput.trim()
+  if (!trimmed) return null
+
+  const aliasedInput = applyAlias(trimmed)
+  const initial = await performAniListMatch(trimmed, aliasedInput)
+
+  const LOW_CONFIDENCE_THRESHOLD = 0.55
+  const hasLowConfidence = !initial.scored.scores.length || (initial.scored.best?.score ?? 0) < LOW_CONFIDENCE_THRESHOLD
+
+  if (!hasLowConfidence) return initial.result
+
+  const refined = await searchGoogleForAnimePhrase(aliasedInput)
+
+  if (!refined || refined.toLowerCase() === aliasedInput.toLowerCase()) {
+    return initial.result
+  }
+
+  const refinedAttempt = await performAniListMatch(trimmed, refined)
+  const refinedBestScore = refinedAttempt.scored.best?.score ?? 0
+  const initialBestScore = initial.scored.best?.score ?? 0
+
+  if (refinedBestScore > initialBestScore) {
+    return refinedAttempt.result
+  }
+
+  return initial.result
 }
